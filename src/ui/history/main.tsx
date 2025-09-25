@@ -1,15 +1,49 @@
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
-import type { HistoryRecord } from '../../types/history';
-import { fetchHistory } from '../../libs/history';
+import type { HistoryItem } from '../../types/history';
+import type { CleanLinkResponse } from '../../types/messages';
+
+async function fetchHistory(): Promise<HistoryItem[]> {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ kind: 'FETCH_HISTORY' }, (response: CleanLinkResponse<HistoryItem[]>) => {
+      if (chrome.runtime.lastError || !response?.ok) {
+        resolve([]);
+        return;
+      }
+      resolve(response.data ?? []);
+    });
+  });
+}
+
+function useToast(delay = 1200) {
+  const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => {
+    if (!message) {
+      return;
+    }
+    const timer = setTimeout(() => setMessage(null), delay);
+    return () => clearTimeout(timer);
+  }, [message, delay]);
+  return { message, setMessage };
+}
 
 function App() {
-  const [records, setRecords] = useState<HistoryRecord[]>([]);
+  const [records, setRecords] = useState<HistoryItem[]>([]);
+  const { message, setMessage } = useToast();
 
   useEffect(() => {
     fetchHistory().then(setRecords).catch(() => setRecords([]));
   }, []);
+
+  const handleCopy = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setMessage('Copied!');
+    } catch (_error) {
+      setMessage('Could not copy. Allow clipboard access.');
+    }
+  };
 
   return (
     <div className="history">
@@ -17,34 +51,54 @@ function App() {
         <h1>CleanLink History</h1>
         <p>Most recent 1,000 cleaned links.</p>
       </header>
-      <table>
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Original</th>
-            <th>Cleaned</th>
-            <th>Final</th>
-            <th>Expanded</th>
-          </tr>
-        </thead>
-        <tbody>
-          {records.length === 0 ? (
-            <tr>
-              <td colSpan={5}>No history yet.</td>
-            </tr>
-          ) : (
-            records.map((record) => (
-              <tr key={record.id}>
-                <td>{new Date(record.ts).toLocaleString()}</td>
-                <td>{record.original}</td>
-                <td>{record.cleaned}</td>
-                <td>{record.final}</td>
-                <td>{record.expanded ? 'Yes' : 'No'}</td>
+      {records.length === 0 ? (
+        <p className="empty">No history yet. Clean a page and come back!</p>
+      ) : (
+        <div className="table-wrapper">
+          <table>
+            <caption className="visually-hidden">Cleaned link history</caption>
+            <thead>
+              <tr>
+                <th scope="col">Time</th>
+                <th scope="col">Before (Original)</th>
+                <th scope="col">After (Final)</th>
+                <th scope="col">Expanded</th>
+                <th scope="col">Notes</th>
+                <th scope="col">Actions</th>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {records.map((record) => (
+                <tr key={record.id}>
+                  <td data-label="Time">{new Date(record.time).toLocaleString()}</td>
+                  <td data-label="Original">
+                    <code title={record.original}>{record.original}</code>
+                  </td>
+                  <td data-label="Cleaned">
+                    <button
+                      className="link"
+                      onClick={() => handleCopy(record.final)}
+                      title="Click to copy"
+                    >
+                      <span>{record.final}</span>
+                    </button>
+                  </td>
+                  <td data-label="Expanded">{record.expanded ? 'Yes' : 'No'}</td>
+                  <td data-label="Notes">{record.notes ?? '—'}</td>
+                  <td data-label="Cleaned">
+                    <button onClick={() => handleCopy(record.original)}>Copy original</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {message && (
+        <div className="toast" role="status">
+          {message}
+        </div>
+      )}
     </div>
   );
 }

@@ -3,44 +3,43 @@ id: CLN-SPEC-20250922
 related_files:
   - ../..//01_基本仕様書_CleanLink.md
   - ../../ソフトウェア開発工程管理.md
-last_updated: 2025-09-22
+last_updated: 2025-09-25
 owner: product
 reviewers:
   - tech_lead
   - qa_lead
-status: draft
+status: in_review
 ---
 
-# CleanLink Mini 基本仕様書 (短版)
+# CleanLink Mini 基本仕様サマリ (Gate S0 用)
 
-> 正式版は `01_基本仕様書_CleanLink.md` を参照。ゲート審査用に要点を抜粋しています。
-
-## 1. KPI サマリ
+## KPI ハイライト
 | KPI | Baseline | Target | 測定方法 | 頻度 |
 |---|---|---|---|---|
-| 初回体験率 | 60% | ≥70% | ローカル集計の匿名レポート | 月次 |
-| Pro転換率 | 1.5% | 2.0–3.5% | Web Store レポート | 月次 |
-| 短縮展開利用率 | 未計測 | ≥40% | ローカル履歴カウント | 月次 |
-| Bulk p95 | 0.45s | <0.30s | 自動計測 (Playwright) | 週次 |
+| 初回体験率 | 60% | ≥75% | ローカル匿名集計 | 月次 |
+| Pro転換率 | 1.5% | 2.5% | Web Store レポート | 月次 |
+| 短縮展開利用率 | 未計測 | ≥45% | 履歴 expanded 件数 | 月次 |
+| Clean p95 | 0.28s | <0.20s | Playwright + performance API | 週次 |
 | 重大不具合 | 0 | 0 | GitHub Issue | 随時 |
 
-## 2. 主要要求 (AC)
-- REQ-101: 手動クリーン (差分表示 + Copy Clean)
-- REQ-102: 一括クリーン + CSV (Pro)
-- REQ-103: 短縮URL展開 (optional permission)
-- REQ-104: 完全ローカル完結 (オフライン可)
+## 主要要求 (AC)
+- REQ-201: Clean 実行で追跡パラメータ除去 + Summary 表示
+- REQ-202: Copy cleaned URLs で一括コピー + トースト
+- REQ-203: History の After クリックでコピー
+- REQ-204: 短縮URL展開 (2.5s timeout, notes 表示)
+- REQ-205: login/auth/payment を含む URL は Ignored として残す
 
-## 3. リスク Top5
-1. 削除しすぎ → ホワイトリストとサイト別除外
-2. 短縮展開の不信 → optional permission + logging
-3. 権限拒否 → UI で再許可導線
-4. 価格不満 → 14日返金 + 機能比較
-5. 海賊版 → 署名検証 + 低価格
+## リスク Top5
+1. 削除しすぎ → JSON ルール + サイト除外で制御
+2. 短縮展開タイムアウト → 2.5s + 再試行 + 明示メッセージ
+3. 権限不可ページ → `UNSUPPORTED_PAGE` エラーメッセージ
+4. 履歴漏洩懸念 → 1000件制限 + オプトアウト
+5. ライセンス偽造 → 署名検証 + Diagnostics 記録
 
-## 4. 非機能 (抜粋)
-- 性能: 100リンク p95 < 300ms / p99 < 800ms
-- セキュリティ: optional permissions のみ、外部API禁止
-- アクセシビリティ: WCAG 2.2 AA
+## 非機能抜粋
+- 性能: 100リンク p95 < 200ms
+- セキュリティ: Sensitive URL 自動除外、optional permissions 準備
+- アクセシビリティ: WCAG 2.2 AA、aria-live で結果通知
 
-## 5. 次アクション
-- Gate S0 レビューで承認後、機能設計書 (`docs/designs/20250922-cleanlink-mini.design.md`) に進む。
+## 次アクション
+- Gate S0 レビューで承認後、`docs/designs/20250922-cleanlink-mini.design.md`（S1）へ進行。

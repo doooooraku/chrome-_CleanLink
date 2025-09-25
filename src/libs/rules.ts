@@ -1,3 +1,5 @@
+import rulesConfig from './rules.json' assert { type: 'json' };
+
 export type CleanReason = 'common' | 'domain';
 
 export interface CleanDiff {
@@ -13,72 +15,76 @@ export interface CleanResult {
   preserved: string[];
 }
 
-const COMMON_PREFIXES = ['utm_', 'icid', 'yclid'];
-const COMMON_PARAMS = new Set([
-  'gclid',
-  'fbclid',
-  'msclkid',
-  'ttclid',
-  'igshid',
-  'mc_eid',
-  'mc_cid',
-  'spm',
-  'ref_src',
-  'ref_url',
-  'ref',
-  'tracking_id',
-  'ck_subscriber_id',
-  'campaignid',
-  'dclid',
-  'oly_enc_id',
-  'oly_anon_id'
-]);
-
 interface DomainRule {
-  domain: RegExp;
+  pattern: string;
   preserve?: string[];
   remove?: string[];
-  transform?: (url: URL) => void;
+  transform?: 'googleRedirect';
 }
 
-const DOMAIN_RULES: DomainRule[] = [
-  {
-    domain: /google\./,
-    transform: (url) => {
-      if (url.pathname === '/url') {
-        const target = url.searchParams.get('url') || url.searchParams.get('q');
-        if (target) {
-          url.href = target;
-        }
-      }
-    },
-    remove: ['ved', 'usg', 'uact', 'sourceid', 'sa']
-  },
-  {
-    domain: /youtube\.com$/,
-    preserve: ['v', 't'],
-    remove: ['feature', 'si', 'pp', 'start_radio']
-  },
-  {
-    domain: /amazon\.(com|co\.uk|co\.jp|de|fr|it)/,
-    preserve: ['k', 'ref_', 'gp'],
-    remove: ['tag', 'ref', 'ascsubtag', 'linkCode', 'creativeASIN']
-  }
-];
+interface RulesConfig {
+  commonPrefixes: string[];
+  commonParams: string[];
+  safeQueryKeys: string[];
+  domainRules: DomainRule[];
+  shortDomains: string[];
+  sensitiveKeywords: string[];
+}
 
-const SAFE_QUERY_KEYS = new Set(['id', 'q', 's']);
+const cachedRules: RulesConfig = rulesConfig satisfies RulesConfig;
+const COMMON_PARAMS = new Set(cachedRules.commonParams.map((param) => param.toLowerCase()));
+const COMMON_PREFIXES = cachedRules.commonPrefixes.map((prefix) => prefix.toLowerCase());
+const SAFE_QUERY_KEYS = new Set(cachedRules.safeQueryKeys.map((key) => key.toLowerCase()));
+const SENSITIVE_KEYWORDS = cachedRules.sensitiveKeywords.map((keyword) => keyword.toLowerCase());
+const SHORT_DOMAINS = cachedRules.shortDomains.map((domain) => domain.toLowerCase());
 
-const isShortLink = (original: string): boolean => {
+function matchesDomain(rule: DomainRule, hostname: string): boolean {
   try {
-    const url = new URL(original);
-    const host = url.hostname;
-    return /^(bit\.ly|t\.co|tinyurl\.com|is\.gd|buff\.ly|shorturl\.at|rebrand\.ly)$/i.test(host);
+    const regex = new RegExp(rule.pattern, 'i');
+    return regex.test(hostname);
   } catch (_error) {
     return false;
   }
-};
+}
 
-export const needsExpansion = (original: string): boolean => isShortLink(original);
+function applyTransform(rule: DomainRule, url: URL): void {
+  if (!rule.transform) {
+    return;
+  }
+  switch (rule.transform) {
+    case 'googleRedirect': {
+      if (url.pathname === '/url') {
+        const target = url.searchParams.get('url') ?? url.searchParams.get('q');
+        if (target) {
+          try {
+            url.href = target;
+          } catch (_error) {
+            // noop
+          }
+        }
+      }
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+function removeDomainParams(rule: DomainRule, url: URL, removed: CleanDiff[]): string[] {
+  const preserved: string[] = [];
+  if (rule.remove) {
+    for (const key of rule.remove) {
+      if (url.searchParams.has(key)) {
+        removed.push({ key, reason: 'domain', value: url.searchParams.get(key) ?? undefined });
+        url.searchParams.delete(key);
+      }
+    }
+  }
+  if (rule.preserve) {
+    preserved.push(...rule.preserve);
+  }
+  return preserved;
+}
 
 export function cleanUrl(raw: string): CleanResult {
   const preserved: string[] = [];
@@ -88,26 +94,15 @@ export function cleanUrl(raw: string): CleanResult {
   try {
     const url = new URL(raw);
 
-    for (const rule of DOMAIN_RULES) {
-      if (rule.domain.test(url.hostname)) {
-        if (rule.transform) {
-          rule.transform(url);
-        }
-        if (rule.remove) {
-          for (const key of rule.remove) {
-            if (url.searchParams.has(key)) {
-              removed.push({ key, reason: 'domain', value: url.searchParams.get(key) ?? undefined });
-              url.searchParams.delete(key);
-            }
-          }
-        }
-        if (rule.preserve) {
-          preserved.push(...rule.preserve);
-        }
+    for (const rule of cachedRules.domainRules) {
+      if (!matchesDomain(rule, url.hostname)) {
+        continue;
       }
+      applyTransform(rule, url);
+      preserved.push(...removeDomainParams(rule, url, removed));
     }
 
-    for (const [key, value] of Array.from(url.searchParams.entries())) {
+    for (const [key, value] of url.searchParams.entries()) {
       const lower = key.toLowerCase();
       const shouldRemove =
         COMMON_PARAMS.has(lower) ||
@@ -119,7 +114,7 @@ export function cleanUrl(raw: string): CleanResult {
       }
     }
 
-    if (url.hash && /utm_|fbclid|gclid/.test(url.hash)) {
+    if (url.hash && /utm_|fbclid|gclid/i.test(url.hash)) {
       removed.push({ key: '#fragment', reason: 'common', value: url.hash });
       url.hash = '';
     }
@@ -136,6 +131,60 @@ export function cleanUrl(raw: string): CleanResult {
     preserved
   };
 }
+
+export function needsExpansion(target: string): boolean {
+  try {
+    const url = new URL(target);
+    return SHORT_DOMAINS.includes(url.hostname.toLowerCase());
+  } catch (_error) {
+    return false;
+  }
+}
+
+function includesKeyword(value: string): boolean {
+  const lower = value.toLowerCase();
+  return SENSITIVE_KEYWORDS.some((keyword) => lower.includes(keyword));
+}
+
+export function isSensitiveUrl(input: string): boolean {
+  try {
+    const url = new URL(input);
+    if (!/^https?:/.test(url.protocol)) {
+      return false;
+    }
+    if (includesKeyword(url.hostname)) {
+      return true;
+    }
+    if (includesKeyword(url.pathname)) {
+      return true;
+    }
+    for (const [key, value] of url.searchParams.entries()) {
+      if (includesKeyword(key) || includesKeyword(value)) {
+        return true;
+      }
+    }
+    return false;
+  } catch (_error) {
+    return false;
+  }
+}
+
+export function shouldSkipUrl(input: string): boolean {
+  if (!input) {
+    return false;
+  }
+  if (isSensitiveUrl(input)) {
+    return true;
+  }
+  try {
+    const url = new URL(input);
+    return url.protocol !== 'http:' && url.protocol !== 'https:';
+  } catch (_error) {
+    return false;
+  }
+}
+
+export type { RulesConfig, DomainRule };
 
 export function createCsv(rows: Array<{ original: string; cleaned: string; final: string }>): string {
   const header = 'original,cleaned,final';

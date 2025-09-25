@@ -1,16 +1,18 @@
+import { migrateLegacyHistoryIfNeeded } from './history';
+
 export interface Settings {
-  autoClean: boolean;
-  previewOnly: boolean;
+  autoCleanDefault: boolean;
   expandShort: boolean;
 }
 
-export type SiteOverrideState = 'allow' | 'block';
+export type SiteOverrideState = 'always-clean' | 'skip';
 
 export interface LicenseState {
   code: string;
   status: 'valid' | 'invalid' | 'expired';
   lastChecked: number;
   expiresAt?: number;
+  signatureValid?: boolean;
 }
 
 export interface DiagnosticsEvent {
@@ -23,8 +25,7 @@ export interface DiagnosticsEvent {
 }
 
 const DEFAULT_SETTINGS: Settings = {
-  autoClean: false,
-  previewOnly: false,
+  autoCleanDefault: false,
   expandShort: false
 };
 
@@ -37,15 +38,17 @@ export interface StorageSnapshot {
 }
 
 const STORAGE_KEYS = ['settings', 'siteOverrides', 'license', 'diagnostics', 'schemaVersion'] as const;
+const TARGET_SCHEMA_VERSION = 2;
 
 export async function loadStorage(): Promise<StorageSnapshot> {
+  await upgradeSchema();
   const result = await chrome.storage.local.get([...STORAGE_KEYS]);
   return {
     settings: { ...DEFAULT_SETTINGS, ...(result.settings ?? {}) },
     siteOverrides: result.siteOverrides ?? {},
     license: result.license ?? null,
     diagnostics: result.diagnostics ?? [],
-    schemaVersion: result.schemaVersion ?? 1
+    schemaVersion: result.schemaVersion ?? TARGET_SCHEMA_VERSION
   };
 }
 
@@ -75,10 +78,15 @@ export async function saveLicense(license: LicenseState | null): Promise<void> {
   await chrome.storage.local.set({ license });
 }
 
-export async function upgradeSchema(targetVersion: number, migrate: (currentVersion: number) => Promise<void>): Promise<void> {
+async function upgradeSchema(): Promise<void> {
   const { schemaVersion = 1 } = await chrome.storage.local.get(['schemaVersion']);
-  if (schemaVersion < targetVersion) {
-    await migrate(schemaVersion);
-    await chrome.storage.local.set({ schemaVersion: targetVersion });
+  if (schemaVersion >= TARGET_SCHEMA_VERSION) {
+    if (schemaVersion > TARGET_SCHEMA_VERSION) {
+      await chrome.storage.local.set({ schemaVersion: TARGET_SCHEMA_VERSION });
+    }
+    return;
   }
+  // schemaVersion 1 → 2: migrate history to chrome.storage.local
+  await migrateLegacyHistoryIfNeeded();
+  await chrome.storage.local.set({ schemaVersion: TARGET_SCHEMA_VERSION });
 }

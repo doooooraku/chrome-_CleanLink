@@ -2,56 +2,63 @@
 id: CLN-DES-20250922
 related_files:
   - ../..//02_機能設計書_CleanLink.md
-last_updated: 2025-09-22
+last_updated: 2025-09-25
 owner: tech_lead
 reviewers:
   - qa_lead
   - ux
-status: draft
+status: in_review
 ---
 
-# CleanLink Mini 機能設計書 (短版)
-
-> 詳細は `02_機能設計書_CleanLink.md` を参照。ゲート S1 審査用に要約しています。
+# CleanLink Mini 機能設計サマリ (Gate S1 用)
 
 ## FEAT / REQ 対応
 | FEAT | 概要 | REQ |
 |---|---|---|
-| FEAT-01 | 手動クリーン (無料) | REQ-101, 104 |
-| FEAT-02 | 一括クリーン + CSV (Pro) | REQ-102 |
-| FEAT-03 | 短縮展開 (optional permissions) | REQ-103 |
-| FEAT-04 | 履歴、CSVログ | REQ-102 |
-| FEAT-05 | サイト別ON/OFF | REQ-101 |
+| FEAT-11 | Popup Clean/Copy/Shortcut + Summary | REQ-201, 202 |
+| FEAT-12 | History Before/After/Notes + Copy | REQ-203 |
+| FEAT-13 | 短縮展開 (timeout 2.5s) | REQ-204 |
+| FEAT-14 | 安全除外 + 自動クリーン | REQ-205 |
+| FEAT-15 | Pro ライセンス UI | REQ-204 |
 
-## 主要 UI 状態
+## UI ステート
 - Popup: Loading / Empty / Result / Error / Offline
-- Options: General, Per-site, Rules, License, Logs & Support
-- History: Table + CSV export
+- History: Table + Responsive cards, Toast copy
+- Options: General / Site rules / Rules library / License / Support
 
-## メッセージ契約
+## メッセージ契約 (抜粋)
 ```ts
-interface CleanLinkMessage {
-  kind: 'SCAN_LINKS' | 'CLEAN_LINKS' | 'BULK_CLEAN' | 'EXPAND_SHORT';
-  payload?: Record<string, unknown>;
+interface CleanLinkResponse<T> {
+  ok: boolean;
+  data?: T;
+  errorCode?: 'PERMISSION_DENIED' | 'TIMEOUT' | 'NETWORK' | 'VALIDATION' | 'UNSUPPORTED_PAGE';
+}
+
+interface ScanResultSummary {
+  summary: {
+    detected: number;
+    changed: number;
+    ignored: number;
+  };
 }
 ```
-- `errorCode`: `PERMISSION_DENIED`, `TIMEOUT`, `NETWORK`, `VALIDATION`
 
 ## 異常系
 | ケース | UI | 回復 |
 |---|---|---|
-| 権限拒否 | モーダル + Grant ボタン | 再申請 |
-| ネット断 | トーストで通知 | 待機 |
-| 解析失敗 | Original をコピー導線 | 手動対応 |
+| Unsupported page | 「This page can’t be cleaned.」＋History導線 | 別ページへ移動 |
+| Clipboard 拒否 | トースト + ヘルプリンク | ブラウザ設定を案内 |
+| Permission 拒否 | トースト + トグルを false に戻す | Options から再申請 |
 
 ## アクセシビリティ
-- 44px 以上のボタンサイズ
-- aria-live で結果読み上げ
-- Tab 移動可能、Esc で閉じる
+- aria-live：Summary=polite、Error=assertive
+- Tab 操作で全コンポーネントへアクセス可
+- ボタン/リンクのコントラスト ≥4.5:1
 
 ## テスト連携
-- Playwright で Popup/Options/Permission の E2E
-- Axe-core 自動検査
+- Playwright: Popup Clean/Copy、History Copy、Options License
+- Axe-core: Popup/History/Options
+- Performance: 100リンクフィクスチャによる p95 計測
 
 ## 次アクション
-- 詳細設計 (`docs/specs/...`??) へ引き継ぎ。
+- 詳細設計 (`03_詳細設計書_CleanLinki.md`) を Gate S2 レビューへ提出。

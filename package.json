@@ -9,18 +9,21 @@
     "lint": "eslint 'src/**/*.{ts,tsx}'",
     "test": "vitest run",
     "test:watch": "vitest",
-    "format": "prettier --write \"{src,tests}/**/*.{ts,tsx,js,jsx,json,css,md}\""
+    "format": "prettier --write \"{src,tests}/**/*.{ts,tsx,js,jsx,json,css,md}\"",
+    "preview": "vite preview",
+    "test:e2e": "npm run build && playwright test",
+    "test:all": "npm run test && npm run test:e2e"
   },
   "dependencies": {
-    "idb": "7.1.1",
-    "papaparse": "5.4.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "tweetnacl": "1.0.3",
     "zustand": "4.5.2"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
     "@crxjs/vite-plugin": "2.2.0",
+    "@playwright/test": "^1.55.1",
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "14.2.1",
     "@testing-library/user-event": "14.5.2",

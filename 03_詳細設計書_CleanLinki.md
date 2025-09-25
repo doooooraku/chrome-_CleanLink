@@ -15,7 +15,7 @@
 ## 1. アーキテクチャ (MOD)
 | MOD-ID | 名称 | 実装 | 責務 / 入出力 / 例外 |
 |---|---|---|---|
-| MOD-01 | Content Script Controller | `src/content/main.ts` | ページ内 `<a>` 抽出、Before/Afterの差分生成、MutationObserver で差分更新。`SCAN_LINKS`, `CLEAN_LINKS`, `BULK_CLEAN` メッセージを受信し DOM を更新。例外時は Original URL を保持し UI に通知。 |
+| MOD-01 | Content Script Controller | `src/content/main.ts` | ページ内 `<a>` 抽出、Before/Afterの差分生成、MutationObserver で差分更新。`SCAN_CURRENT`, `CLEAN_CURRENT`, `BULK_CLEAN` メッセージを受信し DOM を更新。例外時は Original URL を保持し UI に通知。 |
 | MOD-02 | Service Worker (Background) | `src/background/index.ts` | メッセージハブ。短縮URL展開 (HEAD→GET フォールバック, 同時5, タイムアウト2s, 再試行1回)、CSV生成、ライセンス署名検証、diagnostics ログ管理。例外は `errorCode` により分類しクライアントへ返却。 |
 | MOD-03 | UI (Popup / Options / History) | `src/ui/**` | React/Vue (Vite) で実装予定。state 管理に Zustand (軽量) を使用。Service Worker とポート接続しリアルタイム更新。アクセスビリティ属性に準拠。 |
 | MOD-04 | Rules Engine | `src/libs/rules.ts` | 追跡パラメータの削除ロジック。`URL` オブジェクト操作で安全に加工。ホワイトリスト (`safeKeys`) とドメイン別例外を保持。 |
@@ -23,8 +23,8 @@
 | MOD-06 | Licensing | `src/libs/license.ts` | 公開鍵で Ed25519 署名検証。検証済みライセンスを storage に保存し 24h 毎に再検証。期限切れや改竄を検出。 |
 
 ### 1.1 メッセージ・イベントフロー
-1. Popup 起動 → Service Worker に `SCAN_LINKS` を送信。
-2. Service Worker → Content script に `SCAN_LINKS` を転送し、リンク一覧を取得。
+1. Popup 起動 → Service Worker に `SCAN_CURRENT` を送信。
+2. Service Worker → Content script に `SCAN_CURRENT` を転送し、リンク一覧を取得。
 3. ユーザー操作 (Clean) → `CLEAN_LINKS` メッセージで Rules Engine を実行。
 4. Bulk Clean → Service Worker が CSV を生成し `downloads.download` で保存。
 5. Expand short URLs → Service Worker が `fetch` (HEAD→GET) で解決。

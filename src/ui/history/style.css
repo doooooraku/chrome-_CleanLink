@@ -1,36 +1,152 @@
+:root {
+  color-scheme: dark light;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
 body {
   margin: 0;
   background: #0f172a;
   color: #e2e8f0;
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 .history {
   padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-h1 {
-  margin: 0 0 8px;
+header h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
 }
 
-p {
-  margin-top: 0;
+header p {
+  margin: 0;
   color: #94a3b8;
+  font-size: 14px;
+}
+
+.table-wrapper {
+  overflow-x: auto;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
+  font-size: 13px;
+  min-width: 720px;
 }
 
-td,
-th {
+th,
+td {
+  padding: 10px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-  padding: 8px;
+  vertical-align: top;
   text-align: left;
+}
+
+code {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+button {
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: #1e293b;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+button.link {
+  border: none;
+  padding: 0;
+  background: none;
+  color: #38bdf8;
+  text-align: left;
+  text-decoration: underline;
+}
+
+button.link span {
+  display: block;
+  max-width: 360px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.empty {
+  padding: 20px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.25);
   font-size: 14px;
 }
 
-tbody tr:hover {
-  background: rgba(148, 163, 184, 0.1);
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #22c55e;
+  color: #0f172a;
+  padding: 10px 16px;
+  border-radius: 8px;
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.4);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+@media (max-width: 760px) {
+  .table-wrapper {
+    overflow: visible;
+  }
+  table,
+  thead,
+  tbody,
+  th,
+  td,
+  tr {
+    display: block;
+    min-width: unset;
+  }
+  thead {
+    display: none;
+  }
+  tr {
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    padding: 12px;
+  }
+  td {
+    border: none;
+    padding: 6px 0;
+  }
+  td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #94a3b8;
+    margin-bottom: 2px;
+  }
+  code {
+    white-space: normal;
+    word-break: break-all;
+  }
 }

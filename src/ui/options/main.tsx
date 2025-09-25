@@ -1,103 +1,118 @@
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
+import type { CleanLinkResponse } from '../../types/messages';
+import type { LicenseState, Settings, SiteOverrideState } from '../../libs/storage';
 
-interface Settings {
-  autoClean: boolean;
-  previewOnly: boolean;
-  expandShort: boolean;
-}
+interface LicenseResponse extends LicenseState {}
 
-interface LicenseInfo {
-  code: string;
-  status: 'valid' | 'invalid' | 'expired';
-  lastChecked: number;
-  expiresAt?: number;
-}
-
-async function sendMessage<T>(kind: string, payload?: unknown): Promise<T | null> {
+async function sendMessage<T>(kind: string, payload?: unknown): Promise<CleanLinkResponse<T>> {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ kind, payload }, (response: { ok: boolean; data?: T; message?: string }) => {
-      if (chrome.runtime.lastError || !response?.ok) {
-        resolve(null);
+    chrome.runtime.sendMessage({ kind, payload }, (response: CleanLinkResponse<T>) => {
+      if (chrome.runtime.lastError) {
+        resolve({ ok: false, errorCode: 'NETWORK', message: chrome.runtime.lastError.message });
         return;
       }
-      resolve(response.data ?? null);
+      resolve(response);
     });
   });
 }
 
+async function requestOptionalPermissions(): Promise<boolean> {
+  return chrome.permissions.request({ origins: ['https://*/*', 'http://*/*'] });
+}
+
 function App() {
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [licenseCode, setLicenseCode] = useState('');
-  const [license, setLicense] = useState<LicenseInfo | null>(null);
-  const [siteOverrides, setSiteOverrides] = useState<Record<string, 'allow' | 'block'>>({});
+  const [settings, setSettings] = useState<Settings>({ autoCleanDefault: false, expandShort: false });
+  const [license, setLicense] = useState<LicenseState | null>(null);
+  const [siteOverrides, setSiteOverrides] = useState<Record<string, SiteOverrideState>>({});
   const [domainInput, setDomainInput] = useState('');
-  const [domainMode, setDomainMode] = useState<'allow' | 'block'>('block');
+  const [domainMode, setDomainMode] = useState<SiteOverrideState>('always-clean');
+  const [licenseCode, setLicenseCode] = useState('');
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
-    chrome.storage.local.get(['settings', 'license', 'siteOverrides']).then((snapshot) => {
-      setSettings(snapshot.settings ?? { autoClean: false, previewOnly: false, expandShort: false });
-      setLicense(snapshot.license ?? null);
-      setSiteOverrides(snapshot.siteOverrides ?? {});
-    });
+    chrome.storage.local
+      .get(['settings', 'license', 'siteOverrides'])
+      .then((snapshot) => {
+        setSettings(snapshot.settings ?? { autoCleanDefault: false, expandShort: false });
+        setLicense(snapshot.license ?? null);
+        setSiteOverrides(snapshot.siteOverrides ?? {});
+      })
+      .catch(() => {
+        setSettings({ autoCleanDefault: false, expandShort: false });
+        setSiteOverrides({});
+      });
   }, []);
 
-  const updateSetting = (key: keyof Settings, value: boolean) => {
-    if (!settings) {
+  useEffect(() => {
+    if (!toast) {
       return;
     }
-    const next = { ...settings, [key]: value };
-    setSettings(next);
-    void sendMessage('UPDATE_SETTINGS', next);
+    const timer = setTimeout(() => setToast(null), 1500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const updateSettings = async (next: Partial<Settings>) => {
+    const merged = { ...settings, ...next } satisfies Settings;
+    setSettings(merged);
+    await sendMessage<Settings>('UPDATE_SETTINGS', merged);
+  };
+
+  const handleExpandToggle = async (value: boolean) => {
+    if (value) {
+      const granted = await requestOptionalPermissions();
+      if (!granted) {
+        setToast('Permission required to expand short URLs.');
+        return;
+      }
+    }
+    await updateSettings({ expandShort: value });
+  };
+
+  const addOverride = async () => {
+    const domain = domainInput.trim().toLowerCase();
+    if (!domain) {
+      return;
+    }
+    const next = { ...siteOverrides, [domain]: domainMode } satisfies Record<string, SiteOverrideState>;
+    setSiteOverrides(next);
+    await sendMessage<void>('UPDATE_SITE_OVERRIDE', { domain, state: domainMode });
+    setDomainInput('');
+  };
+
+  const removeOverride = async (domain: string) => {
+    const next = { ...siteOverrides } satisfies Record<string, SiteOverrideState>;
+    delete next[domain];
+    setSiteOverrides(next);
+    await sendMessage<void>('UPDATE_SITE_OVERRIDE', { domain, state: null });
+  };
+
+  const clearHistory = async () => {
+    const response = await sendMessage<void>('CLEAR_HISTORY');
+    if (response.ok) {
+      setToast('History cleared');
+    }
   };
 
   const verifyLicense = async () => {
     if (!licenseCode) {
       return;
     }
-    const result = await sendMessage<LicenseInfo>('VERIFY_LICENSE', { code: licenseCode });
-    if (result) {
-      setLicense(result);
+    const response = await sendMessage<LicenseResponse>('VERIFY_LICENSE', { code: licenseCode });
+    if (response.ok && response.data) {
+      setLicense(response.data);
+      setToast('License verified');
+    } else {
+      setToast(response.message ?? 'License invalid');
     }
-  };
-
-  const addOverride = async () => {
-    if (!domainInput) {
-      return;
-    }
-    const next = { ...siteOverrides, [domainInput]: domainMode };
-    setSiteOverrides(next);
-    await chrome.storage.local.set({ siteOverrides: next });
-    setDomainInput('');
-  };
-
-  const removeOverride = async (domain: string) => {
-    const next = { ...siteOverrides };
-    delete next[domain];
-    setSiteOverrides(next);
-    await chrome.storage.local.set({ siteOverrides: next });
-  };
-
-  const exportDiagnostics = async () => {
-    const snapshot = await chrome.storage.local.get(['diagnostics']);
-    const blob = new Blob([JSON.stringify(snapshot.diagnostics ?? [], null, 2)], {
-      type: 'application/json'
-    });
-    const url = URL.createObjectURL(blob);
-    await chrome.downloads.download({
-      url,
-      filename: `cleanlink-diagnostics-${Date.now()}.json`,
-      saveAs: true
-    });
-    URL.revokeObjectURL(url);
   };
 
   return (
     <div className="options">
       <header>
         <h1>CleanLink Settings</h1>
-        <p>Configure automation, rules, and licensing.</p>
+        <p>Configure automation, rules, history, and licensing.</p>
       </header>
 
       <section>
@@ -105,44 +120,38 @@ function App() {
         <label>
           <input
             type="checkbox"
-            checked={settings?.autoClean ?? false}
-            onChange={(event) => updateSetting('autoClean', event.target.checked)}
+            checked={settings.autoCleanDefault}
+            onChange={(event) => updateSettings({ autoCleanDefault: event.target.checked })}
           />
           Auto-clean pages by default
         </label>
         <label>
           <input
             type="checkbox"
-            checked={settings?.previewOnly ?? false}
-            onChange={(event) => updateSetting('previewOnly', event.target.checked)}
+            checked={settings.expandShort}
+            onChange={(event) => handleExpandToggle(event.target.checked)}
           />
-          Start in preview mode
+          Expand short URLs (requires permission)
         </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={settings?.expandShort ?? false}
-            onChange={(event) => updateSetting('expandShort', event.target.checked)}
-          />
-          Expand short URLs automatically
-        </label>
+        <button onClick={clearHistory}>Delete history</button>
       </section>
 
       <section>
-        <h2>Per-site overrides</h2>
+        <h2>Site rules</h2>
         <div className="grid">
           <input
             placeholder="example.com"
             value={domainInput}
             onChange={(event) => setDomainInput(event.target.value)}
           />
-          <select value={domainMode} onChange={(event) => setDomainMode(event.target.value as 'allow' | 'block')}>
-            <option value="allow">Always clean</option>
-            <option value="block">Exclude from cleaning</option>
+          <select value={domainMode} onChange={(event) => setDomainMode(event.target.value as SiteOverrideState)}>
+            <option value="always-clean">Always clean</option>
+            <option value="skip">Skip cleaning</option>
           </select>
           <button onClick={addOverride}>Save</button>
         </div>
-        <ul>
+        <ul className="overrides">
+          {Object.entries(siteOverrides).length === 0 && <li className="empty">No overrides yet.</li>}
           {Object.entries(siteOverrides).map(([domain, mode]) => (
             <li key={domain}>
               <span>{domain}</span>
@@ -154,6 +163,14 @@ function App() {
       </section>
 
       <section>
+        <h2>Rules library</h2>
+        <p>
+          Tracking parameter definitions live in <code>src/libs/rules.json</code>. Update the file and reload the
+          extension to apply new rules.
+        </p>
+      </section>
+
+      <section>
         <h2>License</h2>
         <div className="grid">
           <input
@@ -161,7 +178,7 @@ function App() {
             value={licenseCode}
             onChange={(event) => setLicenseCode(event.target.value)}
           />
-          <button onClick={verifyLicense}>Activate</button>
+          <button onClick={verifyLicense}>Verify</button>
         </div>
         {license && (
           <p className={`license ${license.status}`}>
@@ -173,9 +190,18 @@ function App() {
       </section>
 
       <section>
-        <h2>Diagnostics</h2>
-        <button onClick={exportDiagnostics}>Download diagnostics log</button>
+        <h2>Support</h2>
+        <p>
+          Download diagnostics from the popup to share with support. Privacy Policy and Terms will be published before
+          release.
+        </p>
       </section>
+
+      {toast && (
+        <div className="toast" role="status">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }

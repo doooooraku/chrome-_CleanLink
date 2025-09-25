@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { cleanUrl, createCsv, needsExpansion } from '../../src/libs/rules';
+import { cleanUrl, createCsv, needsExpansion, isSensitiveUrl } from '../../src/libs/rules';
 
 describe('cleanUrl', () => {
   test('removes utm parameters', () => {
@@ -36,5 +36,16 @@ describe('needsExpansion', () => {
   test('detects bit.ly links', () => {
     expect(needsExpansion('https://bit.ly/123')).toBe(true);
     expect(needsExpansion('https://example.com')).toBe(false);
+  });
+});
+
+
+describe('isSensitiveUrl', () => {
+  test('marks login urls as sensitive', () => {
+    expect(isSensitiveUrl('https://example.com/login?next=/home')).toBe(true);
+  });
+
+  test('ignores regular article urls', () => {
+    expect(isSensitiveUrl('https://example.com/blog?id=1')).toBe(false);
   });
 });

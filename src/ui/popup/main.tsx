@@ -1,146 +1,149 @@
 import './style.css';
-import { StrictMode, useEffect } from 'react';
+import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { usePopupStore, bootstrapStore } from './store';
-import type { LinkScanResult } from '../../types/messages';
+import { strings } from '../strings/en';
 
-function LinkRow({ link }: { link: LinkScanResult }) {
-  const removed = link.removed.length > 0 ? link.removed.join(', ') : '—';
-  const copyClean = async () => {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(link.cleaned);
+function useCopyFeedback() {
+  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  useEffect(() => {
+    if (status === 'idle') {
+      return;
     }
-  };
-  const copyOriginal = async () => {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(link.original);
-    }
-  };
-  return (
-    <tr>
-      <td>
-        <code title={link.original}>{link.original}</code>
-      </td>
-      <td>
-        <code title={link.cleaned}>{link.cleaned}</code>
-      </td>
-      <td>{removed}</td>
-      <td>
-        <button onClick={copyClean}>Copy Clean</button>
-        <button onClick={copyOriginal}>Copy Original</button>
-        {link.expanded && <span className="badge">Expanded</span>}
-      </td>
-    </tr>
-  );
+    const timer = setTimeout(() => setStatus('idle'), 1200);
+    return () => clearTimeout(timer);
+  }, [status]);
+  return { status, setStatus };
 }
 
-function Header() {
-  const { scan, clean, bulk, loading, proActive } = usePopupStore((state) => ({
-    scan: state.scan,
-    clean: state.clean,
-    bulk: state.bulk,
+function Summary() {
+  const { summary, loading, error, links } = usePopupStore((state) => ({
+    summary: state.summary,
     loading: state.loading,
-    proActive: state.proActive
+    error: state.error,
+    links: state.links
   }));
+
+  if (loading) {
+    return <p className="status" aria-live="polite">{strings.loading}</p>;
+  }
+  if (error) {
+    return (
+      <p className="status error" role="alert">
+        {error}
+      </p>
+    );
+  }
+  const summaryText = strings.summary(summary.detected, summary.changed, summary.ignored);
+
+  if (!links.length) {
+    return (
+      <div className="summary-group">
+        <div className="summary" aria-live="polite">
+          {summaryText}
+        </div>
+        <p className="status" aria-live="polite">{strings.empty}</p>
+      </div>
+    );
+  }
   return (
-    <div className="actions">
-      <button onClick={clean} disabled={loading} className="primary">
-        Clean & Copy
-      </button>
-      <button onClick={scan} disabled={loading}>
-        Preview only
-      </button>
-      <button onClick={bulk} disabled={loading || !proActive}>
-        Bulk clean + CSV
-      </button>
+    <div className="summary" aria-live="polite">
+      {summaryText}
     </div>
   );
 }
 
-function Settings() {
-  const { autoClean, expandShort, toggleExpandShort, setSettings, proActive, openHistory } = usePopupStore((state) => ({
-    autoClean: state.autoClean,
+function Actions() {
+  const { status, setStatus } = useCopyFeedback();
+  const { loading, clean, copyCleaned, cleanAndCopy } = usePopupStore((state) => ({
+    loading: state.loading,
+    clean: state.clean,
+    copyCleaned: state.copyCleaned,
+    cleanAndCopy: state.cleanAndCopy
+  }));
+
+  const handleCopy = async () => {
+    const ok = await copyCleaned();
+    setStatus(ok ? 'success' : 'error');
+  };
+
+  const handleCleanAndCopy = async () => {
+    const ok = await cleanAndCopy();
+    setStatus(ok ? 'success' : 'error');
+  };
+
+  return (
+    <div className="actions">
+      <button onClick={clean} disabled={loading} className="primary">
+        {strings.clean}
+      </button>
+      <button onClick={handleCopy} disabled={loading}>
+        {strings.copy}
+      </button>
+      <button onClick={handleCleanAndCopy} disabled={loading}>
+        {strings.cleanAndCopy}
+      </button>
+      {status !== 'idle' && (
+        <div className={`toast ${status === 'success' ? 'success' : 'error'}`} role="status">
+          {status === 'success' ? strings.copySuccess : strings.copyFailure}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Toggles() {
+  const { expandShort, toggleExpandShort, autoCleanThisSite, toggleAutoCleanSite, proActive } = usePopupStore((state) => ({
     expandShort: state.expandShort,
-    setSettings: state.setSettings,
     toggleExpandShort: state.toggleExpandShort,
-    proActive: state.proActive,
-    openHistory: state.openHistory
+    autoCleanThisSite: state.autoCleanThisSite,
+    toggleAutoCleanSite: state.toggleAutoCleanSite,
+    proActive: state.proActive
   }));
   return (
-    <section className="settings">
+    <section className="toggles">
       <label>
         <input
           type="checkbox"
-          checked={autoClean}
-          onChange={(event) => setSettings({ autoClean: event.target.checked })}
+          checked={autoCleanThisSite}
+          onChange={(event) => void toggleAutoCleanSite(event.target.checked)}
         />
-        Auto-clean this page
+        {strings.autoClean}
       </label>
       <label>
         <input
           type="checkbox"
           checked={expandShort}
-          onChange={(event) => toggleExpandShort(event.target.checked)}
+          onChange={(event) => void toggleExpandShort(event.target.checked)}
           disabled={!proActive}
         />
-        Expand short URLs
+        {strings.expandShort}
       </label>
-      {!proActive && <p className="hint">Enter a Pro license in Options to unlock.</p>}
-      <button className="link" onClick={openHistory}>Open history</button>
+      {!proActive && <p className="hint">Pro required for short URL expansion.</p>}
     </section>
   );
 }
 
-function Summary() {
-  const { links, loading, error, lastUpdated } = usePopupStore((state) => ({
-    links: state.links,
-    loading: state.loading,
-    error: state.error,
-    lastUpdated: state.lastUpdated
+function Links() {
+  const { openHistory, openOptions } = usePopupStore((state) => ({
+    openHistory: state.openHistory,
+    openOptions: state.openOptions
   }));
-
-  if (loading) {
-    return <p className="status">Scanning links…</p>;
-  }
-  if (error) {
-    return (
-      <p role="alert" className="status error">
-        {error}
-      </p>
-    );
-  }
-  if (links.length === 0) {
-    return <p className="status">No links found on this page.</p>;
-  }
-
   return (
-    <div className="results">
-      <table>
-        <thead>
-          <tr>
-            <th>Original</th>
-            <th>Cleaned</th>
-            <th>Removed</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {links.map((link) => (
-            <LinkRow key={link.original + link.cleaned} link={link} />
-          ))}
-        </tbody>
-      </table>
-      <footer>
-        <small>Updated: {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : '—'}</small>
-      </footer>
+    <div className="nav-links">
+      <button className="link" onClick={openHistory}>
+        {strings.openHistory}
+      </button>
+      <button className="link" onClick={openOptions}>
+        {strings.openSettings}
+      </button>
     </div>
   );
 }
 
 function App() {
-  const { scan } = usePopupStore((state) => ({
-    scan: state.scan
-  }));
+  const { scan } = usePopupStore((state) => ({ scan: state.scan }));
+
   useEffect(() => {
     void bootstrapStore().then(() => scan());
   }, [scan]);
@@ -148,12 +151,13 @@ function App() {
   return (
     <div className="popup">
       <header>
-        <h1>CleanLink Mini</h1>
-        <p className="subtitle">Clean URLs before you share them.</p>
+        <h1>{strings.title}</h1>
+        <p className="subtitle">{strings.subtitle}</p>
       </header>
-      <Header />
       <Summary />
-      <Settings />
+      <Actions />
+      <Toggles />
+      <Links />
     </div>
   );
 }

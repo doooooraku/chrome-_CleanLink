@@ -1,10 +1,10 @@
 import nacl from 'tweetnacl';
-import { decode as decodeBase64 } from './utils';
 import type { LicenseState } from './storage';
+import { decodeBase64 } from './utils';
 
 export interface LicensePayload {
   emailHash: string;
-  exp: number;
+  exp: number; // unix timestamp (seconds)
 }
 
 interface EncodedLicense {
@@ -13,14 +13,18 @@ interface EncodedLicense {
 }
 
 const DEV_UNLOCK_CODE = 'DEV-UNLOCK';
-const PUBLIC_KEY_B64 = (import.meta.env?.VITE_LICENSE_PUBLIC_KEY as string | undefined) ?? '';
 
-function getPublicKey(): Uint8Array | null {
-  if (!PUBLIC_KEY_B64) {
+function cleanPem(pem: string): string {
+  return pem.replace(/-----BEGIN PUBLIC KEY-----/g, '').replace(/-----END PUBLIC KEY-----/g, '').replace(/\s+/g, '');
+}
+
+function decodePem(pem: string): Uint8Array | null {
+  if (!pem) {
     return null;
   }
   try {
-    return decodeBase64(PUBLIC_KEY_B64);
+    const base64 = cleanPem(pem);
+    return decodeBase64(base64);
   } catch (_error) {
     return null;
   }
@@ -51,53 +55,61 @@ function parsePayload(encoded: string): LicensePayload | null {
   }
 }
 
-export function verifyLicense(code: string, now = Date.now()): LicenseState {
+export function verifyLicense(code: string, publicKeyPem: string, now = Date.now()): LicenseState {
+  if (!code) {
+    return { code, status: 'invalid', lastChecked: now };
+  }
+
   if (code === DEV_UNLOCK_CODE) {
     return {
       code,
       status: 'valid',
       lastChecked: now,
-      expiresAt: now + 1000 * 60 * 60 * 24 * 365 // 1 year
+      expiresAt: now + 1000 * 60 * 60 * 24 * 365,
+      signatureValid: true
     };
   }
 
-  const publicKey = getPublicKey();
+  const publicKey = decodePem(publicKeyPem);
   if (!publicKey) {
     return {
       code,
       status: 'invalid',
-      lastChecked: now
+      lastChecked: now,
+      signatureValid: false
     };
   }
 
-  const decoded = decodeLicense(code);
-  if (!decoded) {
+  const encoded = decodeLicense(code);
+  if (!encoded) {
     return {
       code,
       status: 'invalid',
-      lastChecked: now
+      lastChecked: now,
+      signatureValid: false
     };
   }
 
-  const payload = parsePayload(decoded.payload);
+  const payload = parsePayload(encoded.payload);
   if (!payload) {
     return {
       code,
       status: 'invalid',
-      lastChecked: now
+      lastChecked: now,
+      signatureValid: false
     };
   }
 
-  const message = decodeBase64(decoded.payload);
-  const signature = decodeBase64(decoded.signature);
+  const message = decodeBase64(encoded.payload);
+  const signature = decodeBase64(encoded.signature);
+  const signatureValid = nacl.sign.detached.verify(message, signature, publicKey);
 
-  const valid = nacl.sign.detached.verify(message, signature, publicKey);
-
-  if (!valid) {
+  if (!signatureValid) {
     return {
       code,
       status: 'invalid',
-      lastChecked: now
+      lastChecked: now,
+      signatureValid: false
     };
   }
 
@@ -106,7 +118,8 @@ export function verifyLicense(code: string, now = Date.now()): LicenseState {
       code,
       status: 'expired',
       lastChecked: now,
-      expiresAt: payload.exp * 1000
+      expiresAt: payload.exp * 1000,
+      signatureValid: true
     };
   }
 
@@ -114,6 +127,7 @@ export function verifyLicense(code: string, now = Date.now()): LicenseState {
     code,
     status: 'valid',
     lastChecked: now,
-    expiresAt: payload.exp * 1000
+    expiresAt: payload.exp * 1000,
+    signatureValid: true
   };
 }

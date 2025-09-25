@@ -1,144 +1,149 @@
 # 注意
-本ドキュメントは、あなたが提供した **「ソフトウェア開発工程管理.md」** のテンプレとゲート条件に準拠して作成しています。
+本ドキュメントは、あなたが提供した **「ソフトウェア開発工程管理.md」** のテンプレとゲート条件に準拠しています。
 - 参照: 工程とレビューゲート（S0→S1→S2→C1→T→R）、成果物テンプレ、Gateチェック（S0/S1/S2）。
 - 目的: CodexCLIに渡して、そのまま実装・審査・テストに使える粒度に落とし込むこと。
 
 ---
 
-# 機能設計書（CleanLink Mini）
+# 機能設計書（CleanLink Mini v0.3）
 
 ## 用語（かんたん定義）
 - **外部仕様**: ユーザーが目にする画面・操作・振る舞い。
 - **UIステート**: Loading / Empty / Success / Error などの状態表現。
-- **Optional permission**: 利用中に追加で許可を求める Chrome 標準の権限要求。
+- **Result Summary**: `Detected / Changed / Ignored` のカウンタ表示。
+- **ヒストリーノート**: 履歴に保存する `notes` フィールド。`skipped-sensitive` など原因を記録。
 
 ## 1. 機能一覧 (FEAT) と対応
 | FEAT-ID | 機能 | 対応REQ | 優先 | 備考 |
 |---|---|---|---|---|
-| FEAT-01 | 手動クリーン (現在タブのURLを整形) | REQ-101, REQ-104 | Must | 無料。UI の中心機能。
-| FEAT-02 | 一括クリーン＋CSV出力 | REQ-102 | Must | Pro。リンク置換とCSV保存。
-| FEAT-03 | 短縮URL展開 | REQ-103 | Should | Pro。optional permissions を使用。
-| FEAT-04 | 履歴／CSVログ閲覧 | REQ-102, REQ-104 | Should | Pro。IndexedDB 保存。
-| FEAT-05 | サイト別 ON/OFF / 除外 | REQ-101, REQ-102 | Should | 無料機能。Options に配置。
-| FEAT-06 | キーボードショートカット | REQ-101 | Could | 初回は Alt+Shift+C（Clean）を割当て。変更可。
+| FEAT-11 | Popup クリーン（Clean / Copy / Clean & Copy） | REQ-201, 202 | Must | 無料。Result Summary と人間語エラーを表示。
+| FEAT-12 | 履歴ビュー（Before/After/Expanded） | REQ-203 | Must | 無料。クリックでコピー + トースト。
+| FEAT-13 | 短縮URL展開（Pro） | REQ-204 | Should | optional permissions を取得済み前提。timeout 2.5s。
+| FEAT-14 | 安全除外 + サイト単位自動クリーン | REQ-201,205 | Must | login/auth/payment/account を既定除外。
+| FEAT-15 | Pro 管理（ライセンス入力と状態表示） | REQ-204 | Should | 署名検証。Invalid 時は Pro UI 無効化。
+| FEAT-16 | CSV エクスポート（Pro） | REQ-204 | Could | MVP は背景処理のみ。UI に `Export CSV` ボタン。
 
 ## 2. ユーザーストーリー (受入基準付き)
-- **US-01 SNS投稿者として** Clean ボタンでリンクを整えたい。
-  - Then Popup に Before/After が表示され、Copy Clean で短縮済みURLがコピーされる。
-- **US-02 CS担当として** 10件リンクを一括で処理し CSV で保存したい。
-  - Then Bulk Clean 実行後に 3列構成の CSV がダウンロードされる。
-- **US-03 プライバシー重視ユーザーとして** 端末内で完結する拡張を使いたい。
-  - Then ネットワークが無い状態でもエラーにならず、短縮展開は「オフライン」表示でスキップされる。
-- **US-04 Pro 利用者として** 短縮URLの最終遷移先が分からないと不安。
-  - Then Expand short URLs をオンにすると 2 秒以内に最終URLが表示され、optional permission 未許可時は理由と許可ボタンが表示される。
+- **US-11 SNS投稿者として** Clean ボタンでリンクを整えたい。
+  - Then Result Summary に変更数が表示され、必要なら Copy cleaned URLs で即コピーできる。
+- **US-12 業務ユーザーとして** 履歴から再利用したい。
+  - Then History で Before/After を見比べ、After をクリックするとコピーされる。
+- **US-13 Pro ユーザーとして** 短縮URLの最終遷移先を確認したい。
+  - Then Expand short URLs をオンにすると 2.5 秒以内に Final 列へ表示される。
+- **US-14 プライバシー重視ユーザーとして** 安全除外が効いているか確かめたい。
+  - Then login/payments を含む URL は Ignored にカウントされ、履歴 notes に理由が残る。
 
 ## 3. 画面 / UI 設計
 ### 3.1 Popup
 ```
-┌─────────────────────────┐
-│ Clean (Primary button)     │ Preview only (ghost) │
-├─────────────────────────┤
-│ Before / After テーブル                       │
-│ [Original URL]  -> [Cleaned URL]              │
-│ [Copy Original] [Copy Clean] [Open]           │
-├─────────────────────────┤
-│ Pro Section (表示条件: Pro有効)               │
-│ [Toggle] Auto-clean in this tab               │
-│ [Toggle] Expand short URLs (requires permission) │
-│ [Button] Request permission (disabled when granted) │
-│ [Button] Export CSV                           │
-│ [Button] History                              │
-└─────────────────────────┘
+┌────────────────────────────┐
+│ CleanLink Mini                         │
+│ Detected 25 | Changed 18 | Ignored 7   │ ← Result Summary (aria-live="polite")
+│ [Clean] [Copy cleaned URLs] [Clean & Copy ⇧C]
+│ -------------------------------------- │
+│ Error state (when applicable)          │
+│ -------------------------------------- │
+│ Toggles                                │
+│  ☐ Auto-clean this site                │
+│  ☐ Expand short URLs (Pro)             │
+│ Links                                  │
+│  • Open History                        │
+│  • Open Settings                       │
+└────────────────────────────┘
 ```
 - **状態**
-  - Loading: スピナー + 「Scanning links...」
-  - Empty: アイコン + 「No links found on this page. Try another page.」
-  - Error (権限なし): 権限説明と「Grant permission」ボタン。状態復帰で自動再試行。
-  - Offline: トーストで「Network is offline. Expand short URLs is paused.」。
+  - Loading: スピナー + 「Scanning links…」
+  - Empty: アイコン + 「No links found on this page. Try another website.」
+  - Error (非対象ページ): 「This page can’t be cleaned. Open a regular website.」
+  - Offline: トースト「You are offline. Short URL expansion is paused.」
 
-### 3.2 Options ページ構成
+### 3.2 History (独立ページ)
+- テーブル列: `Time | Before (Original) | After (Final) | Expanded | Notes | Actions`
+- After セル: ホバーでツールチップ「Click to copy」、クリックでコピー＆右下トースト (1.2s)。
+- 1000件まで保持。レスポンシブ: 768px 未満でカード表示。
+- フィルタ: 今回は v0.3 で未実装（次期候補）。
+
+### 3.3 Options ページ
 1. **General**
-   - Auto-clean default (per tab)
-   - Default mode (Clean / Preview only)
-2. **Per-site settings**
-   - ドメインごとの ON/OFF、除外一覧
-3. **Rules**
-   - 削除カテゴリ（Advertising, Analytics, Social, Custom）をトグル。
-   - カスタム削除キー追加 (正規表現含む)
+   - Auto-clean default (全体)
+   - Expand short URLs (Pro 切替時は optional permission チェック)
+   - Delete history ボタン
+2. **Site rules**
+   - Domain + mode (`always-clean` / `skip`)
+3. **Rules library**
+   - `rules.json` へのリンク + 更新方法説明
 4. **License**
-   - Pro コード入力フォーム・検証結果表示。
-   - 署名検証の結果 (Valid / Invalid / Expired)。
-5. **Logs & Support**
-   - 自己診断ログのローカル保存／ダウンロード
-   - 14日返金ポリシー説明・メールリンク
+   - ライセンス入力 + Verify ボタン。結果 (valid/invalid/expired) をカラー表示。
+5. **Support**
+   - Diagnostics download、Privacy/Terms、Refund ポリシー導線
 
-### 3.3 History モーダル (Pro)
-- テーブル列: Timestamp / Original / Cleaned / Final / Expanded?
-- レコード最大 1000件 (古いものから削除)。
-- 検索フィールドと CSV エクスポートボタン。
-
-### 3.4 キーボード操作
-- Popup 内の操作は Tab / Shift+Tab で移動。
-- Enter でプライマリボタン実行。Esc で閉じる。
-- アクセシビリティ: `aria-live` を使って処理結果を通知。
+### 3.4 キーボード / ショートカット
+- Popup 内は Tab / Shift+Tab、Enter でフォーカス中ボタン。
+- `Ctrl+Shift+K` (Windows) / `Cmd+Shift+K` (macOS) を Clean & Copy に割当。
+- `Esc` で Popup を閉じる。
 
 ## 4. インタラクション設計
 | No. | トリガー | 主要遷移 | 説明 |
 |---|---|---|---|
-| INT-01 | ツールバーアイコンをクリック | Popup: Loading → （成功/Empty/Error） | content script にメッセージを送り、リンク一覧を取得。
-| INT-02 | Clean ボタン | Popup: Processing → Result | 取得したリンクをクリーン化。成功時はトーストで「Copied cleaned link」。
-| INT-03 | Bulk Clean ボタン | Popup → CSV ダウンロード | Pro 判定後に content script へ「bulk-clean」イベントを送信。
-| INT-04 | Expand short URLs トグル | Popup: Permission モーダル | 権限未許可時は Chrome API で `chrome.permissions.request` を呼ぶ。
-| INT-05 | Options 更新 | storage update → content script broadcast | `chrome.storage.onChanged` で設定を反映。
+| INT-11 | Popup 表示 | Loading → Result/Empty/Error | Background が `SCAN_CURRENT` を発行し、Result Summary を更新。
+| INT-12 | Clean ボタン | Result → Updated | `CLEAN_CURRENT` で DOM 書き換え + 履歴保存。
+| INT-13 | Copy cleaned URLs | Result → Toast | 直近 Clean 結果を整列＆コピー。成功トーストを表示。
+| INT-14 | Clean & Copy | Clean + Copy を連続実行。ショートカット対応。
+| INT-15 | Expand short URLs ON | Permission 確認 → 状態更新 | 未許可で `chrome.permissions.request` を呼ぶ。拒否時は false に戻しエラー表示。
+| INT-16 | History After クリック | Clipboard | `navigator.clipboard.writeText` + Toast。
+| INT-17 | 非対象ページ (chrome:// 等) | Error | Background で判定しエラーメッセージ返却。
 
 ## 5. メッセージ / API 契約
-### 5.1 Runtime メッセージフォーマット
 ```ts
-// 拡張内部メッセージ (Manifest V3, type: module)
-interface CleanLinkMessage {
-  kind: 'SCAN_LINKS' | 'CLEAN_LINKS' | 'BULK_CLEAN' | 'EXPAND_SHORT' | 'GET_HISTORY' | 'SET_HISTORY';
-  payload?: Record<string, unknown>;
+// runtime messages
+interface RuntimeMessageMap {
+  SCAN_CURRENT: void;
+  CLEAN_CURRENT: void;
+  COPY_CLEANED: void;     // Popup 内部で使用（background経由で履歴保存のみ）
+  OPEN_HISTORY: void;
+  UPDATE_SETTINGS: Partial<Settings>;
+  VERIFY_LICENSE: { code: string };
 }
 
-interface CleanLinkResponse {
+interface CleanLinkResponse<T = unknown> {
   ok: boolean;
-  data?: unknown;
-  errorCode?: 'PERMISSION_DENIED' | 'TIMEOUT' | 'NETWORK' | 'VALIDATION';
+  data?: T;
+  errorCode?: 'PERMISSION_DENIED' | 'TIMEOUT' | 'NETWORK' | 'VALIDATION' | 'UNSUPPORTED_PAGE';
   message?: string;
 }
-```
-- `SCAN_LINKS` → `{ links: Array<LinkSnapshot> }`
-- `CLEAN_LINKS` → `{ before: string; after: string; diff: string[] }`
-- `BULK_CLEAN` → `{ csv: string }`
-- `EXPAND_SHORT` → `{ original: string; final: string; status: 'resolved' | 'timeout' }`
 
-### 5.2 Optional Permissions Flow
-1. Expand short URLs トグルが ON → service worker から `chrome.permissions.contains` を確認。
-2. 未許可なら説明モーダルを表示し、ユーザーが「Grant」ボタンを押すと `permissions.request` を実行。
-3. 許可成功で設定を更新し、content script へブロードキャスト。
-4. 拒否時は `expandShort` を false に戻し、トーストで理由を説明。
+interface ScanResultSummary {
+  links: LinkScanResult[];
+  summary: { detected: number; changed: number; ignored: number };
+  nonCleanableReason?: 'unsupported_scheme' | 'no_links';
+}
+```
+- 背景で `UNSUPPORTED_PAGE` を返すケース: `chrome://`, `edge://`, `about:`, `chrome-extension://`。
+- Copy 要求は Popup 内でのみ実行し、background は履歴保存のみ行う。
 
 ## 6. 異常時のふるまい
-| ケース | 表示 | ログ | ユーザー操作 |
+| ケース | UI | ログ | ユーザー操作 |
 |---|---|---|---|
-| ネットワーク断 | 「Network offline. Some features paused.」 | `diagnostics.log` に `offline=true` | Retry ボタンなし。待機のみ。 |
-| 権限拒否 | 「Permission required to expand short URLs」 | `errorCode=PERMISSION_DENIED` | Grant ボタンで再申請。 |
-| 解析失敗 | Before/After 行に「Could not clean. Copied original URL.」 | `errorCode=VALIDATION` | Copy Original ボタン活性化。 |
-| CSV 書き込み失敗 | トースト「Failed to save CSV. Check download permissions.」 | `errorCode=IO_ERROR` | Chrome 設定の確認手順を提示。 |
+| 非対象ページ | 「This page can’t be cleaned. Open a regular website.」 | `errorCode=UNSUPPORTED_PAGE` | History を開く導線を表示 |
+| ネット断 | トースト + expandShort false | `errorCode=NETWORK`, notes=`offline` | 再試行ボタンなし、接続回復待ち |
+| 短縮展開タイムアウト | Result Summary は Changed に含めず、Notes=`expand-timeout` | `errorCode=TIMEOUT` | トースト「Kept as-is (timeout)」 |
+| Clipboard 失敗 | トースト「Couldn’t copy. Allow clipboard access.」 | `errorCode=PERMISSION_DENIED` | Chrome 設定を案内するリンク |
+| CSV ダウンロード拒否 | トースト「Failed to save CSV. Check download permissions.」 | `errorCode=IO_ERROR` | Options に手順リンク |
 
 ## 7. アクセシビリティ / UX ガイドライン
-- 主要ボタンは 44px 以上のタップ領域。
-- 色コントラストは 4.5:1 以上。
-- 画面更新時は `aria-live="polite"` を利用しスクリーンリーダーに結果を通知。
-- すべてのアイコンに `aria-label` を設定しテキストで意味を補足。
+- ボタン/リンクは 44px 以上。
+- `aria-live="polite"` で Result Summary、`aria-live="assertive"` でエラー。
+- トーストは 4.5:1 のコントラストと `role="status"` を付与。
+- History テーブルは `<caption>` 付き。レスポンシブ時は `<dl>` 形式へ変換。
 
 ## 8. テスト観点へのリンク
-- UI 状態は Storybook (後続) で全ステートを表示。
-- Playwright で Popup / Options / Permission モーダルの回帰テストを実施予定。
-- Axe-core によるアクセシビリティ自動検査を CI に組み込む。
+- Playwright: Popup Clean/Copy/Shortcut、History Copy、Options License、Permission フロー。
+- Vitest: Rules Engine、Safety Skip、History マイグレーション、License 検証。
+- Axe-core: Popup/History/Options を検査。
+- Performance script: 100リンク HTML をフィクスチャ化。
 
 ## 9. Gate S1 チェック
 - すべての FEAT に対応する受入基準と異常系を記載。
-- UI ステート・メッセージ仕様・Optional permission フローを定義。
-- アクセシビリティの数値基準 (WCAG 2.2 AA) と検証方法を明記。
-- 次工程 (S2) で利用するメッセージスキーマを提示済み。
+- UI 状態（Loading/Empty/Error/Result/Offline）を明文化。
+- メッセージ契約とエラーコード `UNSUPPORTED_PAGE` を追加。
+- アクセシビリティ要件 (WCAG 2.2 AA) を具体値で記載済み。

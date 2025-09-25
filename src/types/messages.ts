@@ -1,10 +1,9 @@
 export type MessageKind =
-  | 'SCAN_LINKS'
-  | 'CLEAN_LINKS'
+  | 'SCAN_CURRENT'
+  | 'CLEAN_CURRENT'
   | 'BULK_CLEAN'
-  | 'EXPAND_SHORT'
-  | 'SAVE_HISTORY'
   | 'FETCH_HISTORY'
+  | 'CLEAR_HISTORY'
   | 'VERIFY_LICENSE'
   | 'UPDATE_SETTINGS';
 
@@ -13,23 +12,31 @@ export interface CleanLinkMessage {
   payload?: unknown;
 }
 
-export interface ScanLinksResponse {
-  ok: boolean;
-  data: LinkScanResult[];
-}
-
 export interface LinkScanResult {
   original: string;
   cleaned: string;
   href: string;
   removed: string[];
   preserved: string[];
-  expanded?: string;
+  final?: string;
+  expanded?: boolean;
+  notes?: string;
+}
+
+export interface LinkSummary {
+  detected: number;
+  changed: number;
+  ignored: number;
+}
+
+export interface ScanLinksResponse {
+  links: LinkScanResult[];
+  summary: LinkSummary;
 }
 
 export interface CleanLinkResponse<T = unknown> {
   ok: boolean;
   data?: T;
-  errorCode?: 'PERMISSION_DENIED' | 'TIMEOUT' | 'NETWORK' | 'VALIDATION';
+  errorCode?: 'PERMISSION_DENIED' | 'TIMEOUT' | 'NETWORK' | 'VALIDATION' | 'UNSUPPORTED_PAGE';
   message?: string;
 }

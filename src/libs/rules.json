@@ -1,0 +1,69 @@
+{
+  "commonPrefixes": ["utm_", "icid", "yclid"],
+  "commonParams": [
+    "gclid",
+    "fbclid",
+    "msclkid",
+    "ttclid",
+    "igshid",
+    "mc_eid",
+    "mc_cid",
+    "spm",
+    "ref_src",
+    "ref_url",
+    "ref",
+    "tracking_id",
+    "ck_subscriber_id",
+    "campaignid",
+    "dclid",
+    "oly_enc_id",
+    "oly_anon_id",
+    "_hsenc",
+    "_hsmi",
+    "mkt_tok"
+  ],
+  "safeQueryKeys": ["id", "q", "s"],
+  "domainRules": [
+    {
+      "pattern": "google\\.",
+      "remove": ["ved", "usg", "uact", "sourceid", "sa"],
+      "transform": "googleRedirect"
+    },
+    {
+      "pattern": "youtube\\.com$",
+      "preserve": ["v", "t"],
+      "remove": ["feature", "si", "pp", "start_radio", "ab_channel"]
+    },
+    {
+      "pattern": "amazon\\.(com|co\\.uk|co\\.jp|de|fr|it)",
+      "preserve": ["k", "ref_", "gp"],
+      "remove": ["tag", "ref", "ascsubtag", "linkCode", "creativeASIN", "camp", "creative"]
+    }
+  ],
+  "shortDomains": [
+    "bit.ly",
+    "t.co",
+    "tinyurl.com",
+    "is.gd",
+    "buff.ly",
+    "shorturl.at",
+    "rebrand.ly",
+    "goo.gl",
+    "ow.ly"
+  ],
+  "sensitiveKeywords": [
+    "login",
+    "signin",
+    "sign-in",
+    "auth",
+    "account",
+    "checkout",
+    "payment",
+    "billing",
+    "secure",
+    "verify",
+    "oauth",
+    "2fa",
+    "consent"
+  ]
+}

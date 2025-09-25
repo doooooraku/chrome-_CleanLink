@@ -1,10 +1,10 @@
-export interface HistoryRecord {
+export interface HistoryItem {
   id: string;
-  ts: number;
+  time: number;
   original: string;
   cleaned: string;
   final: string;
   expanded: boolean;
-  bulk: boolean;
-  domain: string;
+  notes?: string;
+  site?: string;
 }

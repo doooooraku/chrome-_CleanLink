@@ -3,72 +3,71 @@ id: CLN-TST-20250922
 spec: ../..//01_基本仕様書_CleanLink.md
 design: ../..//02_機能設計書_CleanLink.md
 detail: ../..//03_詳細設計書_CleanLinki.md
-last_updated: 2025-09-22
+last_updated: 2025-09-25
 qa_owner: qa_lead
-status: draft
+status: in_review
 ---
 
-# CleanLink Mini テスト計画
+# CleanLink Mini テスト計画 (Gate T 用)
 
 ## 1. 目的
-- REQ-101〜104 を自動テストと手動テストで検証し、Gate T の基準を満たす。
-- 非機能 (性能・アクセシビリティ) を定量的に確認する。
+- REQ-201〜205 を自動テストと手動テストで検証し、Result Summary / History / Pro 機能の品質を保証する。
+- 性能・アクセシビリティ・エラーハンドリングの定量基準を満たす。
 
 ## 2. テスト範囲
 | レベル | 範囲 | 除外 |
 |---|---|---|
-| 単体 | Rules Engine, Storage ラッパー, License 検証 | UI コンポーネント (Storybook で個別確認) |
-| 結合 | content ↔ service worker ↔ storage | Chrome Sync (非対応) |
-| E2E | Popup 操作、Options 設定、Optional permissions | Web Store 決済 (サンドボックスのみ) |
-| 性能 | 10/50/100リンクの処理時間計測 | 1000リンク超の長文ページ (後続検証) |
-| アクセシビリティ | Popup, Options | History モーダル (自動検査に含める) |
+| 単体 | Rules Engine, Sensitive Skip, Summary 計算, License | UI レイアウト (Storybook で個別確認予定) |
+| 結合 | background ↔ content ↔ storage | Chrome Sync |
+| E2E | Popup Clean/Copy、History Copy、Options License、Permission フロー | Web Store 決済 (手動テスト) |
+| 性能 | 10/50/100リンクの処理時間 | 1000リンク超 (別イテレーション) |
+| アクセシビリティ | Popup, History, Options | CSV エクスポート画面 (次期) |
 
-## 3. テスト入口条件
-- Gate S2 承認済み、実装ブランチが main 最新へ rebase 済み。
-- `pnpm install` 済みで lint/type/unit が緑。
-- テストデータ (短縮URL, 追跡パラメータ付きURL) のフィクスチャを `tests/fixtures` に配置。
+## 3. 入口条件
+- Gate S2 承認済み、main 最新へ rebase 済み。
+- `npm install` 済みで lint/type/unit が全て green。
+- `npm run test:e2e` を実行できるブラウザ権限があること（Chromium headless shell のサンドボックスが無効化できること）。現行のCIサンドボックスでは `--no-sandbox` でも起動不可のため、ローカル確認か別runnerでの実行が必要。
+- Playwright 用フィクスチャ (100リンク HTML、bit.ly モック) を `tests/fixtures` に配置。
 
-## 4. テスト出口条件
-- 必須テストケースの合格率 100%。
-- 不具合は Severity P0/P1 = 0、P2 以下は Issue 登録済みでリスク承認。
-- カバレッジ (statement/branch) ≥ 80%、Rules Engine は 95%。
-- パフォーマンス (100リンク) p95 < 300ms、p99 < 800ms。
-- Axe-core 自動検査で重大問題 0 件。
+## 4. 出口条件
+- 必須テストケース合格率 100%。
+- 重大度 P0/P1 = 0。P2 以下は Issue 登録 + リスク承認。
+- カバレッジ statement/branch ≥ 80%、Rules Engine ≥ 95%。
+- 100リンク処理 p95 < 200ms、p99 < 600ms。
+- Axe-core の重大問題 0 件。
 
-## 5. テストケース一覧 (要約)
+## 5. テストケース（要約）
 | ID | 観点 | 入力 | 期待 |
 |---|---|---|---|
-| TC-101 | 追跡削除 | `https://example.com?a=1&utm_source=x` | 出力=`https://example.com/?a=1` |
-| TC-102 | サイト除外 | 除外ドメインで Clean 実行 | 処理スキップ + トースト表示 |
-| TC-201 | Bulk 50リンク | 50件のアンカータグ | p95 < 0.25s、CSV が保存される |
-| TC-202 | Bulk 200リンク | 200件のアンカータグ | プレビューのみモードへフォールバック |
-| TC-301 | 短縮展開成功 | `https://bit.ly/...` | final URL が表示、expanded=true |
-| TC-302 | 短縮展開失敗 | TCP timeout | status=timeout、UI に再試行導線 |
-| TC-401 | オフラインモード | navigator.onLine=false | 手動 Clean が成功、展開はスキップ |
-| TC-402 | 権限拒否 | permissions.request=false | expandShort=false に戻る |
-| TC-501 | アクセシビリティ | キーボード操作 | Tab で全操作に到達、aria-live が読み上げ |
-| TC-601 | CSV失敗 | downloads API 拒否 | エラーメッセージ表示 + 原因説明 |
-| TC-701 | ライセンス検証 | valid/invalid/expired コード | 状態が `valid/invalid/expired` に更新 |
+| TC-211 | 追跡削除 | `https://example.com?utm_source=x&id=1` | `utm_source` 削除、summary.changed=1 |
+| TC-212 | 安全除外 | `https://login.example.com?next=/home` | Ignored に加算、notes=`skipped-sensitive` |
+| TC-213 | Unsupported page | `chrome://extensions` | エラー文言表示、summary なし |
+| TC-221 | Copy cleaned URLs | Clean 後に Copy | クリップボードへ改行区切り、Toast `Copied!` |
+| TC-231 | History Copy | 履歴 After クリック | Clipboard success + Toast |
+| TC-241 | 短縮展開成功 | bit.ly → example.com | final 更新、expanded=true |
+| TC-242 | 短縮展開 timeout | フェッチ 2.5s 超 | expanded=false、notes=`expand-timeout` |
+| TC-251 | ライセンス検証 | valid/invalid/expired コード | Status が正しく更新 |
+| TC-261 | パフォーマンス | 100リンク HTML | p95 < 200ms を記録 |
+| TC-271 | アクセシビリティ | Popup/History/Options | Axe 重大問題 0 件 |
 
-## 6. テストスケジュール (初回リリース)
+## 6. スケジュール
 | 期間 | 活動 |
 |---|---|
-| Day 1 | 単体・結合テスト、フィクスチャ整備 |
-| Day 2 | E2E / 性能テスト、問題修正 |
-| Day 3 | リグレッション、アクセシビリティ検査、Gate T レビュー |
+| Day 1 | 単体・結合テスト実装、フィクスチャ整備 |
+| Day 2 | E2E・性能・アクセシビリティ実行、修正 |
+| Day 3 | リグレッション、テストサマリ作成、Gate T レビュー |
 
 ## 7. リソース / ツール
-- テスト担当: QA Lead (主担当), 開発補助1名
-- ツール: Playwright, Vitest, pnpm, axe-playwright, chrome-cli (拡張読み込み用)
-- 環境: macOS Ventura, Windows 11, Chrome 128 Stable
+- QA Lead (主担当)、Dev 1 名が補助。
+- ツール: Vitest, Playwright (@playwright/test) + axe-playwright, chrome-cli。
+- 環境: macOS 15, Windows 11, Chrome 128。
 
 ## 8. リスク
-| リスク | 影響 | 対応 |
+| リスク | 影響 | 対策 |
 |---|---|---|
-| Playwright で optional permission が再現できない | E2E カバレッジ低下 | 手動手順を補完し、スクリーンショットで証跡を残す |
-| パフォーマンス測定が CI とローカルで乖離 | 誤判定 | 同一ハード (GitHub Actions) に統一し、閾値にバッファを持たせる |
+| クリップボード制限で E2E が失敗 | 自動化が止まる | Playwright で `--enable-features=ClipboardAPI` を付与し、手動確認をフォールバック |
+| bit.ly テストが不安定 | E2E 再現性低下 | Service Worker にスタブサーバーを用意し、Playwright で intercept |
 
 ## 9. レポート
-- テスト完了後、`tests/reports/<date>-summary.md` を作成し Gate T issue に添付。
-- 失敗ケースは GitHub Project に登録し MTTR を追跡。
-
+- テスト完了後、`tests/reports/<date>-summary.md` を更新し Gate T issue に添付。
+- フィードバックは GitHub Projects (列: In test / Blocked / Done) で管理。
