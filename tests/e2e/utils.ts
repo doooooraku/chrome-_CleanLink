@@ -16,7 +16,8 @@ interface InitArgs {
   tabUrlInit: string;
 }
 
-const distRootDefault = path.resolve(process.cwd(), 'dist');
+export const VHOST = 'http://cleanlink.local';
+export const distRoot = path.resolve(process.cwd(), 'dist');
 
 const mimeByExtension: Record<string, string> = {
   '.html': 'text/html',
@@ -33,10 +34,10 @@ function getContentType(filePath: string): string {
   return mimeByExtension[ext] ?? 'application/octet-stream';
 }
 
-export async function serveDist(page: Page, distRoot = distRootDefault): Promise<void> {
-  await page.route('http://cleanlink.local/**', async (route) => {
-    const requestUrl = new URL(route.request().url);
-    let filePath = path.join(distRoot, decodeURIComponent(requestUrl.pathname));
+export async function serveDist(page: Page, rootDir = distRoot): Promise<void> {
+  await page.route(`${VHOST}/**`, async (route) => {
+    const requestUrl = new URL(route.request().url(), VHOST);
+    let filePath = path.join(rootDir, decodeURIComponent(requestUrl.pathname));
     try {
       let stat = await fs.stat(filePath);
       if (stat.isDirectory()) {
@@ -55,6 +56,47 @@ export async function serveDist(page: Page, distRoot = distRootDefault): Promise
       route.fulfill({ status: 404, body: 'not found' });
     }
   });
+}
+
+export async function blockExternal(page: Page, allowHosts: string[] = [new URL(VHOST).hostname]): Promise<void> {
+  await page.route('**/*', (route) => {
+    try {
+      const targetUrl = new URL(route.request().url());
+      if (targetUrl.protocol.startsWith('http')) {
+        if (!allowHosts.includes(targetUrl.hostname)) {
+          return route.abort();
+        }
+      }
+    } catch {
+      // allow non-standard schemes (data:, chrome-extension:, etc.)
+    }
+    route.continue();
+  });
+}
+
+export async function waitForCleanLinkReady(page: Page, selectorToAppear?: string): Promise<void> {
+  const readyAttr = page.locator('body[data-ready="true"]');
+  try {
+    await readyAttr.waitFor({ timeout: 10_000 });
+    return;
+  } catch {
+    // fallback to window flag
+  }
+
+  try {
+    await page.waitForFunction(
+      () => (window as unknown as { CleanLinkReady?: boolean }).CleanLinkReady === true,
+      null,
+      { timeout: 10_000 }
+    );
+    return;
+  } catch {
+    // fallback to selector wait
+  }
+
+  if (selectorToAppear) {
+    await page.waitForSelector(selectorToAppear, { timeout: 15_000 });
+  }
 }
 
 export async function setupChromeMocks(page: Page, options: ChromeMockOptions = {}): Promise<void> {

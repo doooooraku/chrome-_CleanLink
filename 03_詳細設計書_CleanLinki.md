@@ -5,7 +5,7 @@
 
 ---
 
-# 詳細設計書（CleanLink Mini）
+# 詳細設計書（CleanLink Mini v0.4）
 
 ## 用語（かんたん定義）
 - **MOD**: モジュール。責務が明確な単位で分割したコードブロック。
@@ -17,7 +17,7 @@
 |---|---|---|---|
 | MOD-01 | Content Script Controller | `src/content/main.ts` | ページ内 `<a>` 抽出、Before/Afterの差分生成、MutationObserver で差分更新。`SCAN_CURRENT`, `CLEAN_CURRENT`, `BULK_CLEAN` メッセージを受信し DOM を更新。例外時は Original URL を保持し UI に通知。 |
 | MOD-02 | Service Worker (Background) | `src/background/index.ts` | メッセージハブ。短縮URL展開 (HEAD→GET フォールバック, 同時5, タイムアウト2s, 再試行1回)、CSV生成、ライセンス署名検証、diagnostics ログ管理。例外は `errorCode` により分類しクライアントへ返却。 |
-| MOD-03 | UI (Popup / Options / History) | `src/ui/**` | React/Vue (Vite) で実装予定。state 管理に Zustand (軽量) を使用。Service Worker とポート接続しリアルタイム更新。アクセスビリティ属性に準拠。 |
+| MOD-03 | UI (Popup / Options / History) | `src/ui/**` | React (Vite) で実装。state 管理に Zustand を使用。Service Worker とメッセージをやり取りしリアルタイム更新。アクセスビリティ属性に準拠。 |
 | MOD-04 | Rules Engine | `src/libs/rules.ts` | 追跡パラメータの削除ロジック。`URL` オブジェクト操作で安全に加工。ホワイトリスト (`safeKeys`) とドメイン別例外を保持。 |
 | MOD-05 | Persistence Layer | `src/libs/storage.ts` | chrome.storage.local と IndexedDB の薄いラッパー。バージョニング (`schemaVersion`) とマイグレーションを管理。 |
 | MOD-06 | Licensing | `src/libs/license.ts` | 公開鍵で Ed25519 署名検証。検証済みライセンスを storage に保存し 24h 毎に再検証。期限切れや改竄を検出。 |
@@ -25,10 +25,11 @@
 ### 1.1 メッセージ・イベントフロー
 1. Popup 起動 → Service Worker に `SCAN_CURRENT` を送信。
 2. Service Worker → Content script に `SCAN_CURRENT` を転送し、リンク一覧を取得。
-3. ユーザー操作 (Clean) → `CLEAN_LINKS` メッセージで Rules Engine を実行。
-4. Bulk Clean → Service Worker が CSV を生成し `downloads.download` で保存。
-5. Expand short URLs → Service Worker が `fetch` (HEAD→GET) で解決。
-6. 結果は Popup/Options へ `CleanLinkResponse` で返却。
+3. ユーザー操作 (Clean) → `CLEAN_CURRENT` メッセージで Rules Engine を実行。
+4. サイト単位トグル → Popup から `UPDATE_SITE_OVERRIDE` / `UPDATE_SETTINGS` を送信し、chrome.storage に反映。
+5. Bulk Clean → Service Worker が CSV を生成し `downloads.download` で保存。
+6. Expand short URLs → Service Worker が `fetch` (HEAD→GET) で解決。
+7. 結果は Popup/Options へ `CleanLinkResponse` で返却。
 
 ### 1.2 シーケンス (短縮展開)
 ```
@@ -46,33 +47,31 @@ ServiceWorker → Popup: results
 ### 2.1 chrome.storage.local (設定)
 | Key | 型 | 説明 | 初期値 | バージョン管理 |
 |---|---|---|---|---|
-| `settings` | object | UI設定 (`autoClean`, `previewOnly`, `expandShort`) | `{ autoClean: false, previewOnly: false, expandShort: false }` | schemaVersion=1 |
-| `siteOverrides` | record<string, 'allow'|'block'> | ドメイン別設定 | `{}` | schemaVersion=1 |
+| `settings` | object | UI設定 (`autoCleanDefault`, `expandShort`) | `{ autoCleanDefault: false, expandShort: false }` | schemaVersion=2 |
+| `siteOverrides` | record<string, 'always-clean'\|'skip'> | ドメイン別設定 | `{}` | schemaVersion=2 |
 | `license` | object | `{ code, status: 'valid'|'invalid'|'expired', lastChecked }` | `null` | schemaVersion=1 |
 | `diagnostics` | array | 直近100件のイベントログ | `[]` | schemaVersion=1 |
 
-### 2.2 IndexedDB (履歴)
-- DB 名: `cleanlink-db`
-- バージョン: 1
-- Object Store: `history`
-- インデックス: `ts` (timestamp), `domain`
-- スキーマ:
+### 2.2 履歴データ (`chrome.storage.local`)
+- キー: `history`
+- 構造: 配列 `HistoryItem[]`
 ```ts
-type HistoryRecord = {
-  id: string; // uuid v4
-  ts: number;
+type HistoryItem = {
+  id: string;
+  time: number;
   original: string;
   cleaned: string;
-  final: string; // expand結果
+  final: string;
   expanded: boolean;
-  bulk: boolean;
+  notes?: string;
+  site?: string;
 };
 ```
-- 保持方針: 最大 1000 件。古い順に削除。設定で 30/60/90 日を切り替え可能。
+- 保持方針: 最大 1000 件。新規追記時に古いレコードから削除。Options で手動削除可。
 
 ### 2.3 マイグレーション / ロールバック
 - `schemaVersion` を storage に保存。起動時に `schemaVersion` を確認。
-- 旧バージョン → 新バージョン移行時はマイグレーション関数を実行。
+- 旧 IndexedDB (`cleanlink-db`) を保有するユーザー向けに `migrateLegacyHistoryIfNeeded` を実装し、初回起動で chrome.storage.local に移行後、旧 DB を削除。
 - ロールバック方針: マイグレーション前に `storage` と IndexedDB を JSON/ZIP でバックアップ (ローカル)。バージョン差異が大きい場合はバックアップから復元手順 (Options → Logs & Support → Restore Backup) を提供。
 
 ## 3. セキュリティ設計

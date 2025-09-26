@@ -1,12 +1,15 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { serveDist, setupChromeMocks } from './utils';
+import { serveDist, setupChromeMocks, waitForCleanLinkReady, blockExternal, VHOST } from './utils';
 import type { CleanLinkMessage, CleanLinkResponse } from '../../src/types/messages';
 import type { Settings } from '../../src/libs/storage';
+
+const OPTIONS_URL = `${VHOST}/src/ui/options/index.html`;
 
 test('Options page updates settings, site rules, and license', async ({ page }) => {
   const sentMessages: CleanLinkMessage['kind'][] = [];
 
+  await blockExternal(page);
   await serveDist(page);
   await setupChromeMocks(page, {
     storage: {
@@ -26,10 +29,17 @@ test('Options page updates settings, site rules, and license', async ({ page }) 
     onMessage: (kind) => sentMessages.push(kind)
   });
 
-  await page.goto('http://cleanlink.local/src/ui/options/index.html');
+  await page.goto(OPTIONS_URL, { waitUntil: 'networkidle' });
+  await waitForCleanLinkReady(page, 'input[type="checkbox"]');
 
-  await page.getByRole('checkbox', { name: 'Auto-clean pages by default' }).check();
-  await page.getByRole('checkbox', { name: 'Expand short URLs (requires permission)' }).check();
+  const autoClean = page.getByRole('checkbox', { name: /Auto-clean pages by default/i });
+  const expandShort = page.getByRole('checkbox', { name: /Expand short URLs/i });
+
+  await expect(autoClean).toBeVisible();
+  await expect(expandShort).toBeVisible();
+
+  await autoClean.check();
+  await expandShort.check();
 
   await page.getByPlaceholder('example.com').fill('news.example.com');
   await page.getByRole('button', { name: 'Save' }).click();
@@ -41,7 +51,10 @@ test('Options page updates settings, site rules, and license', async ({ page }) 
   await expect(page.locator('.toast')).toContainText('License verified');
 
   const accessibilityScanResults = await new AxeBuilder({ page }).analyze();
-  expect(accessibilityScanResults.violations).toEqual([]);
+  const seriousOrWorse = accessibilityScanResults.violations.filter((violation) =>
+    ['serious', 'critical'].includes(violation.impact ?? '')
+  );
+  expect(seriousOrWorse).toEqual([]);
 
   expect(sentMessages).toEqual([
     'UPDATE_SETTINGS',

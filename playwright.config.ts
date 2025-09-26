@@ -6,7 +6,10 @@ export default defineConfig({
   projects: [
     {
       name: 'node',
-      use: {}
+      use: {
+        screenshot: 'only-on-failure',
+        trace: 'retain-on-failure'
+      }
     }
   ]
 });

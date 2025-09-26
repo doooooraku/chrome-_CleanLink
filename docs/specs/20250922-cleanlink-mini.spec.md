@@ -8,7 +8,7 @@ owner: product
 reviewers:
   - tech_lead
   - qa_lead
-status: in_review
+status: approved
 ---
 
 # CleanLink Mini 基本仕様サマリ (Gate S0 用)

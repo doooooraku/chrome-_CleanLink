@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './style.css';
 import type { CleanLinkResponse } from '../../types/messages';
 import type { LicenseState, Settings, SiteOverrideState } from '../../libs/storage';
+import { markUiReady } from '../shared/ready';
 
 interface LicenseResponse extends LicenseState {}
 
@@ -38,10 +39,12 @@ function App() {
         setSettings(snapshot.settings ?? { autoCleanDefault: false, expandShort: false });
         setLicense(snapshot.license ?? null);
         setSiteOverrides(snapshot.siteOverrides ?? {});
+        markUiReady();
       })
       .catch(() => {
         setSettings({ autoCleanDefault: false, expandShort: false });
         setSiteOverrides({});
+        markUiReady();
       });
   }, []);
 
@@ -144,7 +147,11 @@ function App() {
             value={domainInput}
             onChange={(event) => setDomainInput(event.target.value)}
           />
-          <select value={domainMode} onChange={(event) => setDomainMode(event.target.value as SiteOverrideState)}>
+          <select
+            aria-label="Rule mode"
+            value={domainMode}
+            onChange={(event) => setDomainMode(event.target.value as SiteOverrideState)}
+          >
             <option value="always-clean">Always clean</option>
             <option value="skip">Skip cleaning</option>
           </select>

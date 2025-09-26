@@ -7,7 +7,7 @@ owner: tech_lead
 reviewers:
   - qa_lead
   - ux
-status: in_review
+status: approved
 ---
 
 # CleanLink Mini 機能設計サマリ (Gate S1 用)

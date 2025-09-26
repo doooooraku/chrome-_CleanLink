@@ -3,6 +3,7 @@ import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { usePopupStore, bootstrapStore } from './store';
 import { strings } from '../strings/en';
+import { markUiReady } from '../shared/ready';
 
 function useCopyFeedback() {
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -147,6 +148,10 @@ function App() {
   useEffect(() => {
     void bootstrapStore().then(() => scan());
   }, [scan]);
+
+  useEffect(() => {
+    markUiReady();
+  }, []);
 
   return (
     <div className="popup">

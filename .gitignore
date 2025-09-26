@@ -1,5 +1,7 @@
 node_modules/
 dist/
+test-results/
+!test-results/.gitkeep
 .env
 *.log
 *.local

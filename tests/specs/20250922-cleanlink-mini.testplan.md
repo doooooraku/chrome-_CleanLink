@@ -5,7 +5,7 @@ design: ../..//02_機能設計書_CleanLink.md
 detail: ../..//03_詳細設計書_CleanLinki.md
 last_updated: 2025-09-25
 qa_owner: qa_lead
-status: in_review
+status: approved
 ---
 
 # CleanLink Mini テスト計画 (Gate T 用)

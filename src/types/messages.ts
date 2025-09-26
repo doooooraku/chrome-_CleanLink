@@ -5,7 +5,8 @@ export type MessageKind =
   | 'FETCH_HISTORY'
   | 'CLEAR_HISTORY'
   | 'VERIFY_LICENSE'
-  | 'UPDATE_SETTINGS';
+  | 'UPDATE_SETTINGS'
+  | 'UPDATE_SITE_OVERRIDE';
 
 export interface CleanLinkMessage {
   kind: MessageKind;

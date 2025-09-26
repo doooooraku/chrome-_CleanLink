@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './style.css';
 import type { HistoryItem } from '../../types/history';
 import type { CleanLinkResponse } from '../../types/messages';
+import { markUiReady } from '../shared/ready';
 
 async function fetchHistory(): Promise<HistoryItem[]> {
   return new Promise((resolve) => {
@@ -33,7 +34,15 @@ function App() {
   const { message, setMessage } = useToast();
 
   useEffect(() => {
-    fetchHistory().then(setRecords).catch(() => setRecords([]));
+    fetchHistory()
+      .then((items) => {
+        setRecords(items);
+        markUiReady();
+      })
+      .catch(() => {
+        setRecords([]);
+        markUiReady();
+      });
   }, []);
 
   const handleCopy = async (value: string) => {
@@ -78,7 +87,8 @@ function App() {
                     <button
                       className="link"
                       onClick={() => handleCopy(record.final)}
-                      title="Click to copy"
+                      title={record.final}
+                      aria-label="Copy cleaned URL"
                     >
                       <span>{record.final}</span>
                     </button>
@@ -86,7 +96,9 @@ function App() {
                   <td data-label="Expanded">{record.expanded ? 'Yes' : 'No'}</td>
                   <td data-label="Notes">{record.notes ?? '—'}</td>
                   <td data-label="Cleaned">
-                    <button onClick={() => handleCopy(record.original)}>Copy original</button>
+                    <button onClick={() => handleCopy(record.original)} aria-label="Copy original URL">
+                      Copy original
+                    </button>
                   </td>
                 </tr>
               ))}

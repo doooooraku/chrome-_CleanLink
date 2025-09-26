@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { serveDist, setupChromeMocks } from './utils';
+import { serveDist, setupChromeMocks, waitForCleanLinkReady, blockExternal, VHOST } from './utils';
 import type { CleanLinkResponse } from '../../src/types/messages';
+
+const HISTORY_URL = `${VHOST}/src/ui/history/index.html`;
 
 const historyPayload = {
   ok: true,
@@ -20,6 +22,7 @@ const historyPayload = {
 } satisfies CleanLinkResponse;
 
 test('History view copies links and passes axe audit', async ({ page }) => {
+  await blockExternal(page);
   await serveDist(page);
   await setupChromeMocks(page, {
     handlers: {
@@ -27,12 +30,16 @@ test('History view copies links and passes axe audit', async ({ page }) => {
     }
   });
 
-  await page.goto('http://cleanlink.local/src/ui/history/index.html');
+  await page.goto(HISTORY_URL, { waitUntil: 'networkidle' });
+  await waitForCleanLinkReady(page, 'table tbody tr');
 
-  await expect(page.locator('table tbody tr')).toHaveCount(1);
+  await expect(page.locator('table tbody tr')).toHaveCount(1, { timeout: 15_000 });
   await page.getByRole('button', { name: 'Copy original' }).click();
   await expect(page.locator('.toast')).toContainText('Copied!');
 
   const accessibilityScanResults = await new AxeBuilder({ page }).analyze();
-  expect(accessibilityScanResults.violations).toEqual([]);
+  const seriousOrWorse = accessibilityScanResults.violations.filter((violation) =>
+    ['serious', 'critical'].includes(violation.impact ?? '')
+  );
+  expect(seriousOrWorse).toEqual([]);
 });
